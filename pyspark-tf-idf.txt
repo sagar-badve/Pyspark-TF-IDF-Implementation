@@ -1,0 +1,57 @@
+#################################################################################################################################################################
+#Pyspark: Using TF-IDF to generate feature vectors from text documents (abstracts).
+
+from pyspark import SparkConf, SparkContext
+conf = SparkConf().setAppName("My App")
+sc = SparkContext(conf = conf)
+
+my_data = sc.textFile("data.txt")
+list1 = my_data.map(lambda line: line.split("\t"))
+list1.count()
+
+list2 = []
+for i in list1.collect():
+    if i[21]=='AB':
+        pass
+    else:
+        list2.append(i[21])      
+print(len(list2))
+
+from nltk.corpus import stopwords 
+import string
+
+stop_words = set(stopwords.words('english'))
+punct = set(string.punctuation) 
+
+def preprocessing(doc):
+    stop_words_removed = " ".join([i for i in doc.lower().split() if i not in stop_words])
+    punct_removed = ''.join(ch for ch in stop_words_removed if ch not in punct)
+    return punct_removed
+
+processed_docs = [preprocessing(doc).split() for doc in list2]                      
+list3 = list(enumerate(processed_docs))
+len(list3)
+
+from pyspark.sql import SQLContext, Row
+sqlContext = SQLContext(sc)
+document_dataframe = sqlContext.createDataFrame(list3, ("document_id", "document_text"))
+document_dataframe.printSchema()
+
+df = (document_dataframe.rdd.map(lambda item:(item.document_id, item.document_text)).toDF().withColumnRenamed("_1","document_id").withColumnRenamed("_2","feature_set"))
+
+from pyspark.ml.feature import HashingTF
+from pyspark.ml.feature import IDF
+hashtf = HashingTF(inputCol="feature_set", outputCol="tf_output")
+tf = hashtf.transform(df)
+tf.show(truncate=False)
+
+idf = IDF(inputCol="tf_output", outputCol="idf_output")
+tfidf = idf.fit(tf).transform(tf)
+tfidf.show(truncate=False)
+
+#To display document id, feature set, tf output, idf output together
+rdd1 = tfidf.rdd.map(lambda item:(item.document_id,item.feature_set,item.tf_output,item.idf_output,(None if item.idf_output is None else item.idf_output.values.sum())))
+for i in rdd1.take(2):
+    print(i) 
+	
+#################################################################################################################################################################
